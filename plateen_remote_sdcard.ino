@@ -13,9 +13,15 @@
 RtcDS1307<TwoWire> Rtc(Wire);
 
 const int chipSelect = 10;    // SD card ship select
+//const int chipSelect = 8;    // SD card ship select
+#define  CONNECT_STATE_PIN 6   // connect status between remote and driver
+int state_connected = 0;
+const long disconnect_interval = 5000;
+unsigned long previousMillis = 0;
 
 //#define led 12
-RF24 radio(9, 8); // CE, CSN
+//RF24 radio(9, 10); // CE, CSN
+RF24 radio(9, 7); // CE, CSN
 const byte addresses[][6] = {"00001", "00002"};
 boolean buttonState = 0;
 
@@ -26,7 +32,8 @@ char walk_state[1] = "";
 int x,y;
 
 void setup() {
-  //pinMode(12, OUTPUT);
+  pinMode(CONNECT_STATE_PIN, OUTPUT);
+  digitalWrite(CONNECT_STATE_PIN,LOW);
   Serial.begin(115200);
   radio.begin();
   radio.openWritingPipe(addresses[1]); // 00001
@@ -46,6 +53,7 @@ void setup() {
 
   Serial.print("localtime: ");
   Serial.print(__DATE__);
+  Serial.print(" ");
   Serial.println(__TIME__);
 
   Rtc.Begin();
@@ -54,7 +62,7 @@ void setup() {
   printDateTime(compiled);
   Serial.println();
 
-  if (!Rtc.IsDateTimeValid()) 
+  /*if (!Rtc.IsDateTimeValid()) 
     {
        
         Serial.println("RTC lost confidence in the DateTime,Please check battery!");
@@ -81,7 +89,7 @@ void setup() {
     {
         Serial.println("RTC is the same as compile time! (not expected but all is fine)");
     }
-
+  */
     // never assume the Rtc was last configured by you, so
     // just clear them to your needed state
     Rtc.SetSquareWavePin(DS1307SquareWaveOut_Low); 
@@ -90,14 +98,39 @@ void setup() {
 void loop() {
   //delay(5);
   radio.startListening();
-  while (!radio.available());
+  while (!radio.available()) {
+
+    unsigned long currentMillis = millis();
+
+    if (currentMillis - previousMillis >= disconnect_interval) {
+      // save the last time it works
+      previousMillis = currentMillis;
+      
+      state_connected = 0;
+      digitalWrite(CONNECT_STATE_PIN,LOW);
+    }
+  }
 
   if (radio.available()) {
     
-    char text[32] = "";
-    char datestr[20];
+    char text[128] = "";
+    char datestr[256];
     radio.read(&text, sizeof(text));
     Serial.println(text);
+
+    //if can get message set led status to on
+    if (strcmp(text,"") != 0) {
+      state_connected = 1;
+    } else {
+      state_connected = 0;
+    }
+
+    if (state_connected == 1) {
+      digitalWrite(CONNECT_STATE_PIN,HIGH);
+    } else {
+      digitalWrite(CONNECT_STATE_PIN,LOW);
+    }
+    
     
     RtcDateTime now = Rtc.GetDateTime();
 
