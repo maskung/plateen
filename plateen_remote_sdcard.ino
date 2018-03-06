@@ -1,4 +1,4 @@
-*
+/*
 * Plateen Remote Control
 *     loop for sending control message
 *     and recieve sensor data
