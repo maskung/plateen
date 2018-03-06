@@ -1,4 +1,4 @@
-/*
+*
 * Plateen Remote Control
 *     loop for sending control message
 *     and recieve sensor data
@@ -41,7 +41,7 @@ void setup() {
   radio.setPALevel(RF24_PA_MIN);
   Serial.println("Start Reading");
 
-  Serial.print("Initializing SD card...");
+  Serial.print(F("Initializing SD card..."));
 
   // see if the card is present and can be initialized:
   if (!SD.begin(chipSelect)) {
@@ -51,9 +51,9 @@ void setup() {
   }
   Serial.println("card initialized.");
 
-  Serial.print("localtime: ");
+  Serial.print(F("localtime: "));
   Serial.print(__DATE__);
-  Serial.print(" ");
+  Serial.print(F(" "));
   Serial.println(__TIME__);
 
   Rtc.Begin();
@@ -95,10 +95,21 @@ void setup() {
     Rtc.SetSquareWavePin(DS1307SquareWaveOut_Low); 
    
 }
+
+char text[128] = "";
+File dataFile;
 void loop() {
+  static  int state_rev =0;
+  
+  if (state_connected == 1) {
+    digitalWrite(CONNECT_STATE_PIN,HIGH);
+  } else {
+    digitalWrite(CONNECT_STATE_PIN,LOW);
+  }
+    
   //delay(5);
   radio.startListening();
-  while (!radio.available()) {
+  while (!radio.available() ) {
 
     unsigned long currentMillis = millis();
 
@@ -109,14 +120,54 @@ void loop() {
       state_connected = 0;
       digitalWrite(CONNECT_STATE_PIN,LOW);
     }
+    
   }
 
+  state_rev = (state_rev>=5)? 0: state_rev ;
+  
   if (radio.available()) {
-    
-    char text[128] = "";
-    char datestr[256];
-    radio.read(&text, sizeof(text));
-    Serial.println(text);
+   
+    char datestr[254];
+    char tmp_str[33];
+    //char head[];
+    memset(tmp_str, 0, sizeof(tmp_str));
+    radio.read(&tmp_str, sizeof(tmp_str));
+    //Serial.println(tmp_str);
+   
+    switch(state_rev){
+     case 0:    
+               if(strcmp(tmp_str,"begin") == 0){
+                 state_rev = 1;
+               }
+     break;
+     case 1:   //memset(head,0 sizeof(head));
+               //memcpy( head, tmp_str , 5 );
+               //memcpy(text, &tmp_str[5] , strlen(tmp_str)+1-5 );
+               if(   strstr(tmp_str,"DATA1")  !=  NULL ){
+                  memset(text, 0, sizeof(text)); 
+                  strcpy(text,&tmp_str[5]);
+                  state_rev =2 ;
+                }
+     break;   
+     case 2:   if(   strstr(tmp_str,"DATA2")  !=  NULL ){
+                 strcat(text,&tmp_str[5]);
+                 state_rev =3 ;
+               }
+     break;
+     case 3:  if(   strstr(tmp_str,"DATA3")  !=  NULL ){
+                strcat(text,&tmp_str[5]);
+                state_rev =4 ;
+               }
+     break;
+     case 4: 
+             if(   strstr(tmp_str,"DATA4")  !=  NULL ){
+                strcat(text,&tmp_str[5]);
+                state_rev =5 ;
+             }
+     break;     
+    }
+    //Serial.println(String("Epn: ")+text);
+     
 
     //if can get message set led status to on
     if (strcmp(text,"") != 0) {
@@ -125,50 +176,56 @@ void loop() {
       state_connected = 0;
     }
 
-    if (state_connected == 1) {
-      digitalWrite(CONNECT_STATE_PIN,HIGH);
-    } else {
-      digitalWrite(CONNECT_STATE_PIN,LOW);
-    }
-    
-    
-    RtcDateTime now = Rtc.GetDateTime();
+   
+ 
+    if(state_rev == 5 ){    
+       RtcDateTime now = Rtc.GetDateTime();
 
-    //datestr = printDateTime(now);
+      //datestr = printDateTime(now);
+        
+      strcpy(datestr,printDateTime(now));
+      strcat(datestr,",");
+      strcat(datestr,text);
+      Serial.println(datestr);
+
+      // open the file. note that only one file can be open at a time,
+      // so you have to close this one before opening another.
+      if (!SD.exists("envlog4.txt")) {
+        Serial.println(F("envlog4.txt not exists."));
+        Serial.println(F("Creating envlog4.txt..."));
+        dataFile = SD.open("envlog4.txt", FILE_WRITE);
+        dataFile.close();
+      }else{
+        dataFile = SD.open("envlog4.txt", FILE_WRITE);  
+         // if the file is available, write to it:
+        if (dataFile) {
+          dataFile.println(datestr);
+          //dataFile.println(String("Hello"));
+          dataFile.close();      
+        }
+        // if the file isn't open, pop up an error:
+        else {
+          Serial.println(F("error opening datalog.txt"));
+        }
+        
+      }
+    }
       
-    strcpy(datestr,printDateTime(now));
-    strcat(datestr,",");
-    strcat(datestr,text);
-    Serial.println(datestr);
-
-    
-    // open the file. note that only one file can be open at a time,
-    // so you have to close this one before opening another.
-    File dataFile = SD.open("envlog.txt", FILE_WRITE);
-
-    // if the file is available, write to it:
-    if (dataFile) {
-      dataFile.println(datestr);
-      dataFile.close();      
-    }
-    // if the file isn't open, pop up an error:
-    else {
-      Serial.println("error opening datalog.txt");
-    }
-    
   }
+
+  
   //delay(100);
   radio.stopListening();
 
     x = analogRead(PIN_ANALOG_X);
     y = analogRead(PIN_ANALOG_Y);
-    Serial.print("x:");
+    Serial.print(F("x:"));
     Serial.print(analogRead(PIN_ANALOG_X));
-    Serial.print(" ");
+    Serial.print(F(" "));
   
-    Serial.print("y:");
+    Serial.print(F("y:"));
     Serial.print(analogRead(PIN_ANALOG_Y));
-    Serial.print(" ");  
+    Serial.print(F(" "));  
   
     Serial.println();
 
@@ -176,15 +233,18 @@ void loop() {
     if ( x >= 300 && x <= 623 && y >= 1015) {      
        //forward    
        radio.write("W", sizeof("W"));
-       Serial.println("Forward");
+       Serial.println(F("Forward"));
     } else if ( x <= 5 && y >= 480 && y <= 490) {
        // turn left
        radio.write("A", sizeof("A"));
-       Serial.println("Turn left");
+       Serial.println(F("Turn left"));
     } else if ( x >= 1015 && y >= 480 && y <= 490) {
        radio.write("D", sizeof("D"));
-       Serial.println("Turn right");
-    } else radio.write("S", sizeof("S"));
+       Serial.println(F("Turn right"));
+    }else if (  x >= 300 && x <= 623 && y <= 50 ) {
+       radio.write("X", sizeof("X"));
+       Serial.println(F("Turn back"));
+    }else radio.write("S", sizeof("S"));
   
   /*radio.read(&buttonState, sizeof(buttonState));*/
   
